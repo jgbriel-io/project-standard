@@ -1,0 +1,28 @@
+{
+  "mcpServers": {
+    "socraticode": {
+      "command": "npx",
+      "args": ["-y", "socraticode"],
+      "env": {
+        "QDRANT_MODE": "external",
+        "QDRANT_URL": "http://127.0.0.1:6333"
+      }
+    },
+    "playwright": {
+      "command": "npx",
+      "args": ["@playwright/mcp@latest"]
+    },
+    "serena": {
+      "command": "serena",
+      "args": ["start-mcp-server", "--context", "claude-code", "--project", "."]
+    },
+    "sonarqube": {
+      "command": "docker",
+      "args": ["run", "--init", "-i", "--rm", "-e", "SONARQUBE_TOKEN", "-e", "SONARQUBE_URL", "sonarsource/sonarqube-mcp"],
+      "env": {
+        "SONARQUBE_TOKEN": "${SONARQUBE_TOKEN}",
+        "SONARQUBE_URL": "${SONARQUBE_URL}"
+      }
+    }
+  }
+}
