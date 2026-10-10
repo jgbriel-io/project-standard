@@ -1,6 +1,6 @@
 {
   "name": "project-standard",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "description": "Shared check and agent-config generator for repos that follow the project standard",
   "license": "MIT",
