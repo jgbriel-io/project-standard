@@ -199,6 +199,7 @@ assert.deepEqual(expandBraces("{a,b}/{c,d}"), ["a/c", "a/d", "b/c", "b/d"]);
     mcpServers: {
       sonarqube: { command: "docker", args: ["run", "-i", "--rm", "-e", "SONARQUBE_TOKEN", "sonarsource/sonarqube-mcp"], env: { SONARQUBE_TOKEN: "${SONARQUBE_TOKEN}", MODE: "ci" } },
       remote: { type: "http", url: "https://mcp.example.invalid/mcp", headers: { Authorization: "Bearer ${REMOTE_TOKEN}", "X-Region": "us" } },
+      serena: { command: "serena", args: ["start-mcp-server", "--context", "claude-code"] },
     },
   };
   const root = repo({
@@ -223,6 +224,9 @@ assert.deepEqual(expandBraces("{a,b}/{c,d}"), ["a/c", "a/d", "b/c", "b/d"]);
   const codex = readFileSync(join(root, ".codex/config.toml"), "utf8");
   assert.match(codex, /\[mcp_servers\.sonarqube\]\ncommand = "docker"\nargs = \[.*\]\nenv_vars = \["SONARQUBE_TOKEN"\]\nenv = \{ MODE = "ci" \}/);
   assert.match(codex, /bearer_token_env_var = "REMOTE_TOKEN"\nhttp_headers = \{ X-Region = "us" \}/);
+  assert.match(codex, /args = \["start-mcp-server", "--context", "codex"\]/);
+  assert.deepEqual(cursor.serena.args, ["start-mcp-server", "--context", "ide"]);
+  assert.deepEqual(kiro.serena.args, ["start-mcp-server", "--context", "ide"]);
   const mdc = readFileSync(join(root, ".cursor/rules/db-migrations.mdc"), "utf8");
   assert.match(mdc, /^---\ndescription: Migration rules\nglobs: db\/\*\*\/\*\.sql,db\/\*\*\/\*\.ts\nalwaysApply: false\n---\n<!-- Generated/);
   assert.match(readFileSync(join(root, ".cursor/rules/general.mdc"), "utf8"), /^---\nalwaysApply: true\n---\n/);
