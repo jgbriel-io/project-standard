@@ -14,6 +14,7 @@ import { checkAgentsCap, checkDrift, expandBraces, sync } from "./lib/agents.mjs
 import { checkDecisions, checkFrontmatter, checkLinks, parseFrontmatter } from "./lib/docs.mjs";
 import { checkGitleaks } from "./lib/gitleaks.mjs";
 import { changes, listFiles, reader, resolveBase } from "./lib/git.mjs";
+import { governingDecisions, matchesGlob, which } from "./lib/governs.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const roots = [];
@@ -271,6 +272,43 @@ assert.deepEqual(expandBraces("{a,b}/{c,d}"), ["a/c", "a/d", "b/c", "b/d"]);
   assert.equal(cli.status, 1, cli.stderr);
   assert.match(cli.stdout, /docs\/a\.md:1: \[frontmatter\]/);
   assert.equal(spawnSync(process.execPath, [join(here, "cli.mjs"), "check"], { cwd: root }).status, 2);
+}
+
+// Governs matcher: `*` stays in one segment, `**` spans zero or more but a trailing one needs at least one, dots match, case counts.
+for (const [glob, path, expected] of [
+  ["src/api/**", "src/api/routes/x.ts", true],
+  ["src/api/**", "src/api", false],
+  ["src/api/*.ts", "src/api/a/b.ts", false],
+  ["src/{api,web}/**", "src/web/main.tsx", true],
+  ["**/*.yml", ".github/workflows/ci.yml", true],
+  ["**/*.ts", "index.ts", true],
+  ["db/**/*.sql", "db/x.sql", true],
+  ["Src/api/**", "src/api/x.ts", false],
+  [".husky/pre-push", ".husky/pre-push", true],
+]) {
+  assert.equal(matchesGlob(glob, path), expected, `${glob} vs ${path}`);
+}
+
+// which: only accepted decisions with governs, ascending, title without its number; the CLI prints them.
+{
+  const governed = (n, status, globs) => decision(n, status, `governs:\n${globs.map((g) => `  - "${g}"\n`).join("")}`).replace(`# ${n}\n`, `# ${String(n).padStart(4, "0")} Decision ${n}\n`);
+  const root = repo({
+    "docs/decisions/0001-one.md": governed(1, "accepted", ["src/**"]),
+    "docs/decisions/0002-two.md": governed(2, "superseded", ["src/**"]),
+    "docs/decisions/0003-three.md": governed(3, "proposed", ["src/**"]),
+    "docs/decisions/0004-four.md": decision(4),
+    "docs/decisions/0010-ten.md": governed(10, "accepted", ["src/{a,b}.ts"]),
+    "src/a.ts": "",
+  });
+  const decisions = governingDecisions(listFiles(root), reader(root, false));
+  assert.deepEqual(decisions.map((d) => [d.number, d.title]), [["0001", "Decision 1"], ["0010", "Decision 10"]]);
+  assert.deepEqual(which(["src/a.ts", "lib/x.ts"], decisions).map((r) => [r.path, r.decisions.map((d) => d.number)]), [["src/a.ts", ["0001", "0010"]], ["lib/x.ts", []]]);
+
+  const cli = spawnSync(process.execPath, [join(here, "cli.mjs"), "which", "src/a.ts", "README.md"], { cwd: root, encoding: "utf8" });
+  assert.equal(cli.status, 0, cli.stderr);
+  assert.equal(cli.stdout, "src/a.ts: 0001 Decision 1\nsrc/a.ts: 0010 Decision 10\nREADME.md: none\n");
+  const nested = spawnSync(process.execPath, [join(here, "cli.mjs"), "which", "a.ts"], { cwd: join(root, "src"), encoding: "utf8" });
+  assert.match(nested.stdout, /^src\/a\.ts: 0001 Decision 1\n/);
 }
 
 // Gitleaks: a staged token fails the commit, a clean change passes. Downloads the pinned binary once.
