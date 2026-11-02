@@ -309,6 +309,9 @@ for (const [glob, path, expected] of [
   assert.equal(cli.stdout, "src/a.ts: 0001 Decision 1\nsrc/a.ts: 0010 Decision 10\nREADME.md: none\n");
   const nested = spawnSync(process.execPath, [join(here, "cli.mjs"), "which", "a.ts"], { cwd: join(root, "src"), encoding: "utf8" });
   assert.match(nested.stdout, /^src\/a\.ts: 0001 Decision 1\n/);
+
+  const malformed = repo({ "docs/decisions/0001-one.md": decision(1, "accepted", 'governs:\n  - \n  - [a, b]\n  - "src/**"\n'), "src/a.ts": "" });
+  assert.deepEqual(which(["src/a.ts"], governingDecisions(listFiles(malformed), reader(malformed, false)))[0].decisions.map((d) => d.number), ["0001"]);
 }
 
 // Gitleaks: a staged token fails the commit, a clean change passes. Downloads the pinned binary once.
