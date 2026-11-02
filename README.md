@@ -20,12 +20,13 @@ Tags are `vX.Y.Z`. Up to `standard-v0.1.0` the package lived in `jgbriel-io/jgbr
 |---|---|
 | `project-standard sync` | Regenerates the Cursor, Codex and Kiro copies from the Claude sources, and `.codex/hooks.json` once a decision carries `governs`. Deletes generated files that no longer have a source. Prints every write and delete |
 | `project-standard check --staged` | Pre-commit. Reads the staged content from the index, not the working tree |
-| `project-standard check --base <ref>` | CI. Checks what changed between `<ref>` and `HEAD`. An all-zeros or unknown ref falls back to `HEAD^` |
+| `project-standard check --base <ref>` | CI. Checks what changed between `<ref>` and `HEAD`. An all-zeros or unknown ref falls back to `HEAD^`. After the findings, lists the decisions that govern the change (see Governs) |
 | `project-standard check --all` | Migration. Checks every tracked file and scans the full history for secrets |
+| `project-standard check --governs` | Pre-push warning. Prints each `governs` glob that matches no tracked file as `path:line: [governs] glob "…" matches no tracked file`, with the line of the decision's `governs:` key. Always exits 0 |
 | `project-standard which <path...>` | Prints, for each path, the accepted decisions whose `governs` globs match it, as `path: NNNN Title`, or `path: none`. Always exits 0 |
 | `project-standard hook` | Claude Code and Codex `PreToolUse` hook. Reads the payload on stdin and prints the decisions that govern the file or files about to be written as agent context. Never blocks, always exits 0, prints nothing on a miss or an error |
 
-Findings print as `path:line: [check] message`. There are no warnings: any finding exits 1.
+The four modes of `check` are mutually exclusive. Findings print as `path:line: [check] message`, and any finding exits 1. The one non-failing mode is `check --governs`: its warnings never change the exit code.
 
 ### Governs
 
@@ -37,7 +38,9 @@ governs:
   - "src/{api,web}/*.ts"
 ```
 
-`*` matches within one path segment and `**` across segments; a trailing `**` needs at least one segment below it, so `src/api/**` does not match `src/api` itself. Braces expand, dot segments match like any other, and matching is case-sensitive. `?` and `[...]` are not supported. `check` fails a decision whose `governs` is a flow list (`[a, b]`) or a scalar, has no items, an empty or non-string item, an item with leading or trailing whitespace, an item with `?`, `[` or `]`, or a bare `*` or `**`; it does not check that a glob matches any file.
+`*` matches within one path segment and `**` across segments; a trailing `**` needs at least one segment below it, so `src/api/**` does not match `src/api` itself. Braces expand, dot segments match like any other, and matching is case-sensitive. `?` and `[...]` are not supported. `check` fails a decision whose `governs` is a flow list (`[a, b]`) or a scalar, has no items, an empty or non-string item, an item with leading or trailing whitespace, an item with `?`, `[` or `]`, or a bare `*` or `**`; it does not check that a glob matches any file. `check --governs` does, as a warning: it prints every `governs` glob of an accepted decision that matches no tracked file, on the line of that decision's `governs:` key, and always exits 0, so it can run from pre-push without blocking a push.
+
+Under `check --base`, after the findings, the change is matched against the accepted decisions. When a `governs` glob matches a changed, renamed or deleted file, it prints `Decisions governing this change:` and up to 5 of those decisions, in ascending number, as `NNNN Title (path)`. That is output for the CI log, not a finding: the exit code does not change. `check --staged` lists nothing, so a commit stays quiet. Neither feature prints anything when no decision carries `governs`.
 
 ### Hook
 
