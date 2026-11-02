@@ -408,6 +408,82 @@ for (const [glob, path, expected] of [
   assert.deepEqual(found.filter((m) => m.startsWith("docs/product/")), []);
 }
 
+// check --governs warns on dead globs and always exits 0; --base lists the governing decisions, capped at 5 and ascending; --staged lists nothing.
+{
+  const cli = (root, ...args) => spawnSync(process.execPath, [join(here, "cli.mjs"), ...args], { cwd: root, encoding: "utf8" });
+  const commit = (root, files) => {
+    stage(root, files);
+    git(root, "commit", "-q", "-m", "change");
+  };
+  const cap = (n) => `docs/decisions/${String(n).padStart(4, "0")}-cap.md`;
+  const heading = "Decisions governing this change:";
+  const root = repo({
+    "docs/decisions/0001-live.md": governed(1, "accepted", ["src/**", "gone/**", "gone/**", "src/{a,gone}.ts"]),
+    "docs/decisions/0002-old.md": governed(2, "superseded", ["gone/**"]),
+    "docs/decisions/0003-idea.md": governed(3, "proposed", ["src/**", "gone/**"]),
+    "docs/decisions/0004-plain.md": decision(4),
+    "docs/decisions/0005-lib.md": governed(5, "accepted", ["lib/*.ts"]),
+    ...Object.fromEntries(Array.from({ length: 7 }, (_, i) => [cap(11 + i), governed(11 + i, "accepted", ["cap/**"])])),
+    "src/a.ts": "",
+    "cap/seed.ts": "",
+    "README.md": "# demo\n",
+  });
+
+  const dead = cli(root, "check", "--governs");
+  assert.equal(dead.status, 0, dead.stderr);
+  assert.equal(dead.stderr, "");
+  assert.equal(dead.stdout, ['docs/decisions/0001-live.md:7: [governs] glob "gone/**" matches no tracked file', 'docs/decisions/0005-lib.md:7: [governs] glob "lib/*.ts" matches no tracked file', ""].join("\n"));
+  commit(root, { "lib/x.ts": "" });
+  assert.equal(cli(root, "check", "--governs").stdout, 'docs/decisions/0001-live.md:7: [governs] glob "gone/**" matches no tracked file\n');
+  stage(root, { "gone/x.ts": "" });
+  assert.equal(cli(root, "check", "--governs").stdout, 'docs/decisions/0001-live.md:7: [governs] glob "gone/**" matches no tracked file\n');
+  git(root, "rm", "-q", "--cached", "gone/x.ts");
+
+  for (const other of [["--staged"], ["--all"], ["--base", "HEAD"], ["--staged", "--all"]]) assert.equal(cli(root, "check", "--governs", ...other).status, 2, other.join(" "));
+  assert.equal(cli(root, "--governs").status, 2);
+
+  commit(root, { "cap/x.ts": "", "src/b.ts": "" });
+  const listed = cli(root, "check", "--base", "HEAD^");
+  assert.equal(listed.status, 0, listed.stderr);
+  assert.equal(listed.stdout, [heading, "0001 Decision 1 (docs/decisions/0001-live.md)", ...[11, 12, 13, 14].map((n) => `00${n} Decision ${n} (${cap(n)})`), ""].join("\n"));
+
+  commit(root, { "README.md": "# demo, edited\n" });
+  assert.equal(cli(root, "check", "--base", "HEAD^").stdout, "");
+
+  commit(root, { "src/a.ts": null });
+  assert.equal(cli(root, "check", "--base", "HEAD^").stdout, `${heading}\n0001 Decision 1 (docs/decisions/0001-live.md)\n`);
+
+  git(root, "mv", "lib/x.ts", "moved.ts");
+  git(root, "commit", "-q", "-m", "rename");
+  assert.equal(cli(root, "check", "--base", "HEAD^").stdout, `${heading}\n0005 Decision 5 (docs/decisions/0005-lib.md)\n`);
+
+  commit(root, { "docs/product/x.md": "# no frontmatter\n", "lib/y.ts": "" });
+  const failing = cli(root, "check", "--base", "HEAD^");
+  assert.equal(failing.status, 1);
+  assert.equal(failing.stdout, `docs/product/x.md:1: [frontmatter] missing frontmatter (type, status)\n${heading}\n0005 Decision 5 (docs/decisions/0005-lib.md)\n`);
+
+  stage(root, { "src/c.ts": "", "cap/y.ts": "" });
+  const staged = cli(root, "check", "--staged");
+  assert.equal(staged.status, 0, staged.stderr);
+  assert.equal(staged.stdout, "");
+
+  const bare = repo({ "docs/decisions/0001-plain.md": decision(1), "docs/a.md": "# no frontmatter\n", "src/a.ts": "" });
+  commit(bare, { "src/b.ts": "" });
+  assert.equal(cli(bare, "check", "--governs").stdout, "");
+  assert.equal(cli(bare, "check", "--governs").status, 0);
+  assert.equal(cli(bare, "check", "--base", "HEAD^").stdout, "");
+  assert.equal(cli(bare, "check", "--all").status, 1);
+  const none = repo({ "README.md": "# demo\n" });
+  assert.deepEqual([cli(none, "check", "--governs").status, cli(none, "check", "--governs").stdout], [0, ""]);
+
+  commit(bare, { "docs/decisions/0002-dead.md": governed(2, "accepted", ["nowhere/**"]) });
+  const warned = cli(bare, "check", "--governs");
+  assert.deepEqual([warned.status, warned.stdout], [0, 'docs/decisions/0002-dead.md:7: [governs] glob "nowhere/**" matches no tracked file\n']);
+  const all = cli(bare, "check", "--all");
+  assert.equal(all.status, 1);
+  assert.doesNotMatch(all.stdout, /\[governs\]|Decisions governing/);
+}
+
 // Gitleaks: a staged token fails the commit, a clean change passes. Downloads the pinned binary once.
 {
   const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
