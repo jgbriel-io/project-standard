@@ -12,7 +12,7 @@ const USAGE = `usage:
   project-standard sync                                   regenerate the Cursor, Codex and Kiro copies
   project-standard check (--staged | --base <ref> | --all)
   project-standard which <path...>                        list the accepted decisions that govern each path
-  project-standard hook                                   read a Claude Code PreToolUse payload on stdin, print the decisions that govern the file`;
+  project-standard hook                                   read a Claude Code or Codex PreToolUse payload on stdin, print the decisions that govern the file`;
 
 if (process.argv[2] === "hook") {
   process.stdout.on("error", () => process.exit(0));

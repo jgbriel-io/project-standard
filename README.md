@@ -18,12 +18,12 @@ Tags are `vX.Y.Z`. Up to `standard-v0.1.0` the package lived in `jgbriel-io/jgbr
 
 | Command | Does |
 |---|---|
-| `project-standard sync` | Regenerates the Cursor, Codex and Kiro copies from the Claude sources. Deletes generated files that no longer have a source. Prints every write and delete |
+| `project-standard sync` | Regenerates the Cursor, Codex and Kiro copies from the Claude sources, and `.codex/hooks.json` once a decision carries `governs`. Deletes generated files that no longer have a source. Prints every write and delete |
 | `project-standard check --staged` | Pre-commit. Reads the staged content from the index, not the working tree |
 | `project-standard check --base <ref>` | CI. Checks what changed between `<ref>` and `HEAD`. An all-zeros or unknown ref falls back to `HEAD^` |
 | `project-standard check --all` | Migration. Checks every tracked file and scans the full history for secrets |
 | `project-standard which <path...>` | Prints, for each path, the accepted decisions whose `governs` globs match it, as `path: NNNN Title`, or `path: none`. Always exits 0 |
-| `project-standard hook` | Claude Code `PreToolUse` hook. Reads the payload on stdin and prints the decisions that govern `tool_input.file_path` as agent context. Never blocks, always exits 0, prints nothing on a miss or an error |
+| `project-standard hook` | Claude Code and Codex `PreToolUse` hook. Reads the payload on stdin and prints the decisions that govern the file or files about to be written as agent context. Never blocks, always exits 0, prints nothing on a miss or an error |
 
 Findings print as `path:line: [check] message`. There are no warnings: any finding exits 1.
 
@@ -41,13 +41,24 @@ governs:
 
 ### Hook
 
-`project-standard hook` tells Claude Code which decisions govern the file it is about to write. Wire it in `.claude/settings.json`:
+`project-standard hook` tells Claude Code or Codex which decisions govern the files it is about to write. It reads the payload on stdin:
+
+| Agent | Detected by | Paths read |
+|---|---|---|
+| Claude Code | default | `tool_input.file_path`, absolute |
+| Codex | `tool_name` is `apply_patch` | the `*** Add File:`, `*** Update File:`, `*** Delete File:` and `*** Move to:` headers in `tool_input.command`, absolute or relative to the payload's `cwd`; a patch may name several |
+
+For Claude Code, wire it in `.claude/settings.json` by hand:
 
 ```json
 { "hooks": { "PreToolUse": [{ "matcher": "Edit|Write", "hooks": [{ "type": "command", "command": "bunx --bun project-standard hook", "timeout": 10 }] }] } }
 ```
 
-It prints `{"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":"…"}}`, never a `permissionDecision`, so the edit always goes ahead and the agent reads the context next to the tool result. The repository is the one that holds the edited path (`git rev-parse --show-toplevel` from its nearest existing directory), not `CLAUDE_PROJECT_DIR`, so a path inside a worktree reads that worktree's decisions. At most 5 decisions per path, in ascending number, and under 1,500 characters in total. Only the Claude Code payload is read for now.
+It prints `{"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":"…"}}`, never a `permissionDecision`, so the edit always goes ahead and the agent reads the context next to the tool result. The repository is the one that holds the edited path (`git rev-parse --show-toplevel` from its nearest existing directory), not `CLAUDE_PROJECT_DIR`, so a path inside a worktree reads that worktree's decisions. At most 5 decisions per path, in ascending number, and under 1,500 characters in total across all the paths of a patch; a path whose sentence no longer fits is left out.
+
+For Codex, `sync` generates `.codex/hooks.json` and `drift` checks it, so nothing is wired by hand. The file exists only while at least one `docs/decisions/NNNN-*.md` carries `governs`; `sync` deletes it once none does. Its command is `<runner> project-standard hook`, for both `command` and `commandWindows`, with the runner taken from the lockfile at the repo root: `bunx --bun` for `bun.lock` or `bun.lockb`, `pnpm exec` for `pnpm-lock.yaml`, `npx --no` otherwise. Each developer must trust the project's `.codex/` layer and this hook once per machine, with `/hooks` in Codex. Changing the generated entry, which a different runner does, asks for that trust again.
+
+On Windows, Codex runs the command through `cmd.exe` from its own working directory, which may be a subdirectory. `npx --no`, `bunx --bun` and `pnpm exec` all resolve the local `project-standard` from there, so Codex need not start at the repo root; a relative `node node_modules/project-standard/cli.mjs hook` does not.
 
 ## Checks
 
@@ -84,7 +95,7 @@ All generated paths belong to `sync`. Add them to the formatter's ignore list (`
 
 Known limits:
 
-- **Codex** loads a project's `.codex/config.toml` only after that project is trusted in the user's Codex config.
+- **Codex** loads a project's `.codex/config.toml` only after that project is trusted in the user's Codex config. `.codex/hooks.json` is trusted through `/hooks`, once per machine and again whenever its entry changes (see Hook).
 - **Cursor** also reads `.claude/skills/` itself, so it sees each skill twice.
 - **Serena** runs with the same `--context` in every agent.
 
