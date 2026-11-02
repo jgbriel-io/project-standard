@@ -259,10 +259,13 @@ assert.deepEqual(expandBraces("{a,b}/{c,d}"), ["a/c", "a/d", "b/c", "b/d"]);
 // Codex hook: sync renders .codex/hooks.json only while a decision carries governs, with the lockfile's runner; drift catches an edit, a deletion and an orphan.
 {
   const hooks = (exec) => JSON.stringify({ hooks: { PreToolUse: [{ matcher: "^apply_patch$", hooks: [{ type: "command", command: `${exec} project-standard hook`, commandWindows: `${exec} project-standard hook`, timeout: 10 }] }] } }, null, 2) + "\n";
-  const root = repo({ "docs/decisions/0001-one.md": decision(1), "docs/decisions/0002-two.md": decision(2, "accepted", "governs:\n"), "docs/product/scope.md": doc("product", "current", 'governs: ["src/**"]\n') });
+  const root = repo({ "docs/decisions/0001-one.md": decision(1), "docs/decisions/0002-two.md": decision(2, "accepted", "governs:\n"), "docs/decisions/0003-flow.md": decision(3, "accepted", "governs: []\n"), "docs/decisions/0004-scalar.md": decision(4, "accepted", "governs: src/**\n"), "docs/product/scope.md": doc("product", "current", 'governs: ["src/**"]\n') });
   const drift = () => messages(run(root, "staged").filter((f) => f.check === "drift"));
   assert.deepEqual(sync(root), { errors: [], written: [], removed: [] });
   assert.deepEqual(drift(), []);
+  write(root, { "docs/decisions/0009-draft.md": governed(9, "accepted", ["src/**"]) });
+  assert.deepEqual(sync(root).written, []);
+  rmSync(join(root, "docs/decisions/0009-draft.md"));
 
   stage(root, { "docs/decisions/0001-one.md": governed(1, "proposed", ["src/**"]) });
   assert.deepEqual(sync(root), { errors: [], written: [".codex/hooks.json"], removed: [] });
@@ -422,6 +425,7 @@ for (const [glob, path, expected] of [
   assert.equal(hook(root, apply(patch("*** Update File: a.ts", "*** Add File: b.ts"), join(root, "src"))), context(`${two("src/a.ts")}. ${two("src/b.ts")}. ${tail}`));
   assert.equal(hook(root, apply(patch("*** Add File: src/new.ts", "*** Update File: src/new.ts", "*** Move to: src/new.ts"), root)), context(`${one("src/new.ts")}. ${tail}`));
   assert.equal(hook(root, apply(`apply_patch <<'EOF'\n${patch("*** Add File:  src/new.ts  ")}\nEOF`, root)), context(`${one("src/new.ts")}. ${tail}`));
+  assert.equal(hook(root, apply(patch("*** Add File: \t ", "*** Add File: src/new.ts"), root)), context(`${one("src/new.ts")}. ${tail}`));
 
   const crowded = JSON.parse(hook(root, apply(patch("*** Add File: cap/x.ts", "*** Add File: cap/y.ts", "*** Add File: src/a.ts"), root))).hookSpecificOutput.additionalContext;
   assert.ok(crowded.length < 1500, String(crowded.length));

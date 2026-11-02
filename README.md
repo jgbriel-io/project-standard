@@ -82,6 +82,7 @@ Edit the Claude sources only. The copies are committed, and `drift` fails when o
 | `.mcp.json` | `.cursor/mcp.json` (`type: "stdio"` added, `${VAR}` rewritten to `${env:VAR}`) | `.codex/config.toml` (`${VAR}` env forwarded by name as `env_vars`, literal env as `env`, `Authorization: Bearer ${X}` as `bearer_token_env_var`, other `${X}` headers as `env_http_headers`) | `.kiro/settings/mcp.json` |
 | `.claude/skills/<name>/` | `.agents/skills/<name>/` | `.agents/skills/<name>/` | `.kiro/skills/<name>/` |
 | `.claude/rules/**/*.md` | `.cursor/rules/<flat>.mdc`: `paths` becomes `globs`, with braces expanded; `alwaysApply: true` when there is no `paths` | none | `.kiro/steering/<flat>.md`: `inclusion: fileMatch` with a `fileMatchPattern` list; `inclusion: always` when there is no `paths` |
+| committed `docs/decisions/*.md` with a non-empty `governs` | none | `.codex/hooks.json` (see [Hook](#hook)) | none |
 
 `sync` refuses to write anything, and names the server, when a target cannot express the source:
 
