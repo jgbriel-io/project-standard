@@ -13,7 +13,7 @@ const USAGE = `usage:
   project-standard check (--staged | --base <ref> | --all)
   project-standard check --governs                        warn about governs globs that match no tracked file, always exit 0
   project-standard which <path...>                        list the accepted decisions that govern each path
-  project-standard hook                                   read a Claude Code PreToolUse payload on stdin, print the decisions that govern the file`;
+  project-standard hook                                   read a Claude Code or Codex PreToolUse payload on stdin, print the decisions that govern the file`;
 
 const MAX_LISTED = 5;
 

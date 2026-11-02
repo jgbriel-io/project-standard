@@ -256,6 +256,50 @@ assert.deepEqual(expandBraces("{a,b}/{c,d}"), ["a/c", "a/d", "b/c", "b/d"]);
   assert.match(sync(root).errors.map((e) => e.message).join("\n"), /cannot expand|expands \$\{VAR\} only/);
 }
 
+// Codex hook: sync renders .codex/hooks.json only while a decision carries governs, with the lockfile's runner; drift catches an edit, a deletion and an orphan.
+{
+  const hooks = (exec) => JSON.stringify({ hooks: { PreToolUse: [{ matcher: "^apply_patch$", hooks: [{ type: "command", command: `${exec} project-standard hook`, commandWindows: `${exec} project-standard hook`, timeout: 10 }] }] } }, null, 2) + "\n";
+  const root = repo({ "docs/decisions/0001-one.md": decision(1), "docs/decisions/0002-two.md": decision(2, "accepted", "governs:\n"), "docs/decisions/0003-flow.md": decision(3, "accepted", "governs: []\n"), "docs/decisions/0004-scalar.md": decision(4, "accepted", "governs: src/**\n"), "docs/product/scope.md": doc("product", "current", 'governs: ["src/**"]\n') });
+  const drift = () => messages(run(root, "staged").filter((f) => f.check === "drift"));
+  assert.deepEqual(sync(root), { errors: [], written: [], removed: [] });
+  assert.deepEqual(drift(), []);
+  write(root, { "docs/decisions/0009-draft.md": governed(9, "accepted", ["src/**"]) });
+  assert.deepEqual(sync(root).written, []);
+  rmSync(join(root, "docs/decisions/0009-draft.md"));
+
+  stage(root, { "docs/decisions/0001-one.md": governed(1, "proposed", ["src/**"]) });
+  assert.deepEqual(sync(root), { errors: [], written: [".codex/hooks.json"], removed: [] });
+  assert.equal(readFileSync(join(root, ".codex/hooks.json"), "utf8"), hooks("npx --no"));
+  assert.deepEqual(sync(root).written, []);
+  git(root, "add", "-A");
+  assert.deepEqual(drift(), []);
+  git(root, "commit", "-q", "-m", "hook");
+
+  stage(root, { ".codex/hooks.json": "{}\n" });
+  assert.deepEqual(drift(), [".codex/hooks.json:1: [drift] differs from its source: run project-standard sync (never edit a generated copy)"]);
+  assert.deepEqual(sync(root).written, [".codex/hooks.json"]);
+  stage(root, { ".codex/hooks.json": hooks("npx --no").replace(/\n/g, "\r\n") });
+  assert.deepEqual(drift(), []);
+
+  for (const [lock, exec] of [["bun.lock", "bunx --bun"], ["pnpm-lock.yaml", "pnpm exec"], ["bun.lockb", "bunx --bun"], ["package-lock.json", "npx --no"]]) {
+    stage(root, { [lock]: "" });
+    assert.deepEqual(drift(), exec === "npx --no" ? [] : [".codex/hooks.json:1: [drift] differs from its source: run project-standard sync (never edit a generated copy)"], lock);
+    sync(root);
+    assert.equal(readFileSync(join(root, ".codex/hooks.json"), "utf8"), hooks(exec), lock);
+    stage(root, { [lock]: null });
+    sync(root);
+    git(root, "add", "-A");
+  }
+
+  git(root, "rm", "-q", "-f", ".codex/hooks.json");
+  assert.deepEqual(drift(), [".codex/hooks.json:1: [drift] missing: run project-standard sync and stage the result"]);
+
+  stage(root, { "docs/decisions/0001-one.md": decision(1), ".codex/hooks.json": hooks("npx --no") });
+  assert.deepEqual(drift(), [".codex/hooks.json:1: [drift] has no source: run project-standard sync to remove it"]);
+  assert.deepEqual(sync(root), { errors: [], written: [], removed: [".codex/hooks.json"] });
+  assert.throws(() => readFileSync(join(root, ".codex/hooks.json")), /ENOENT/);
+}
+
 // --base: an all-zeros ref (first push of a branch) falls back to HEAD^ instead of failing or scanning everything.
 {
   const root = repo({ "docs/a.md": doc("product", "current") });
@@ -314,7 +358,7 @@ for (const [glob, path, expected] of [
   assert.deepEqual(which(["src/a.ts"], governingDecisions(listFiles(malformed), reader(malformed, false)))[0].decisions.map((d) => d.number), ["0001"]);
 }
 
-// hook: a Claude Code PreToolUse payload on stdin; the repository nearest the edited path decides, it never blocks and never prints on a miss.
+// hook: a Claude Code or Codex apply_patch PreToolUse payload on stdin; the repository nearest the edited path decides, it never blocks and never prints on a miss.
 {
   const tail = "Read each listed file before continuing; if this change contradicts one, amend or supersede it in this PR.";
   const hook = (cwd, input, env = {}) => {
@@ -369,6 +413,34 @@ for (const [glob, path, expected] of [
   assert.equal(hook(root, edit(posix(join(root, "wt/lib/x.ts")), root), env), context(`Decisions governing lib/x.ts: 0001 Decision 1 (docs/decisions/0001-one.md). ${tail}`));
   assert.equal(hook(root, edit(windows(join(root, "wt/src/a.ts")), root), env), context(`Decisions governing src/a.ts: 0002 Decision 2 (docs/decisions/0002-two.md). ${tail}`));
   assert.equal(hook(root, edit(posix(join(root, "wt/README.md")), root), env), "");
+
+  const apply = (command, cwd) => ({ session_id: "s", cwd, hook_event_name: "PreToolUse", tool_name: "apply_patch", tool_input: { command } });
+  const patch = (...lines) => ["*** Begin Patch", ...lines, "*** End Patch"].join("\n");
+  const one = (file) => `Decisions governing ${file}: 0001 Decision 1 (docs/decisions/0001-one.md)`;
+  const two = (file) => `${one(file)}; 0002 Decision 2 (docs/decisions/0002-two.md)`;
+  const multi = patch("*** Add File: src/new.ts", "+*** Add File: README.md", "*** Update File: " + posix(join(root, "src/a.ts")), "*** Move to: src/b.ts", "@@", "-a", "+b", "*** Delete File: README.md");
+  assert.equal(hook(root, apply(multi, root)), context(`${one("src/new.ts")}. ${two("src/a.ts")}. ${two("src/b.ts")}. ${tail}`));
+  assert.equal(hook(root, apply(multi.replaceAll("\n", "\r\n"), root)), context(`${one("src/new.ts")}. ${two("src/a.ts")}. ${two("src/b.ts")}. ${tail}`));
+  assert.equal(hook(root, apply(patch("*** Update File: " + windows(join(root, "src/a.ts")), "@@"), root)), context(`${two("src/a.ts")}. ${tail}`));
+  assert.equal(hook(root, apply(patch("*** Update File: a.ts", "*** Add File: b.ts"), join(root, "src"))), context(`${two("src/a.ts")}. ${two("src/b.ts")}. ${tail}`));
+  assert.equal(hook(root, apply(patch("*** Add File: src/new.ts", "*** Update File: src/new.ts", "*** Move to: src/new.ts"), root)), context(`${one("src/new.ts")}. ${tail}`));
+  assert.equal(hook(root, apply(`apply_patch <<'EOF'\n${patch("*** Add File:  src/new.ts  ")}\nEOF`, root)), context(`${one("src/new.ts")}. ${tail}`));
+  assert.equal(hook(root, apply(patch("*** Add File: \t ", "*** Add File: src/new.ts"), root)), context(`${one("src/new.ts")}. ${tail}`));
+
+  const crowded = JSON.parse(hook(root, apply(patch("*** Add File: cap/x.ts", "*** Add File: cap/y.ts", "*** Add File: src/a.ts"), root))).hookSpecificOutput.additionalContext;
+  assert.ok(crowded.length < 1500, String(crowded.length));
+  assert.equal(crowded.match(/\d{4} T/g).length, 5);
+  assert.equal(crowded.match(/Decisions governing/g).length, 2);
+  assert.match(crowded, /^Decisions governing cap\/x\.ts: 0011 T.+0015 T.+\(docs\/decisions\/0015-cap\.md\)\. Decisions governing src\/a\.ts: 0001 .+; 0002 /);
+
+  assert.equal(hook(root, apply(patch("*** Add File: README.md", "+*** Add File: src/a.ts", " *** Update File: src/a.ts", "*** Delete File: ../outside.ts"), root)), "");
+  assert.equal(hook(root, apply(patch("*** Add File:", "+src/a.ts"), root)), "");
+  assert.equal(hook(root, apply("", root)), "");
+  assert.equal(hook(root, apply(7, root)), "");
+  assert.equal(hook(root, { tool_name: "apply_patch", tool_input: { file_path: posix(join(root, "src/a.ts")) } }), "");
+  assert.equal(hook(root, { tool_name: "apply_patch" }), "");
+  assert.equal(hook(root, { ...apply(patch("*** Add File: src/a.ts"), root), tool_name: "Bash" }), "");
+  assert.equal(hook(outside, apply(patch(`*** Add File: ${posix(join(root, "src/a.ts"))}`, "*** Add File: src/a.ts"), outside)), context(`${two("src/a.ts")}. ${tail}`));
 }
 
 {
@@ -428,6 +500,8 @@ for (const [glob, path, expected] of [
     "cap/seed.ts": "",
     "README.md": "# demo\n",
   });
+  sync(root);
+  commit(root, {});
 
   const dead = cli(root, "check", "--governs");
   assert.equal(dead.status, 0, dead.stderr);

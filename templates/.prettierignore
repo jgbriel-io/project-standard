@@ -1,5 +1,6 @@
 .cursor/mcp.json
 .cursor/rules/
 .codex/config.toml
+.codex/hooks.json
 .kiro/
 .agents/skills/
