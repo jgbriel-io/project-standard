@@ -36,7 +36,7 @@ governs:
   - "src/{api,web}/*.ts"
 ```
 
-`*` matches within one path segment and `**` across segments; a trailing `**` needs at least one segment below it, so `src/api/**` does not match `src/api` itself. Braces expand, dot segments match like any other, and matching is case-sensitive. `?` and `[...]` are not supported. `check` fails a decision whose `governs` is a flow list (`[a, b]`) or a scalar, has an empty or non-string item, an item with `?`, `[` or `]`, or a bare `*` or `**`; it does not check that a glob matches any file.
+`*` matches within one path segment and `**` across segments; a trailing `**` needs at least one segment below it, so `src/api/**` does not match `src/api` itself. Braces expand, dot segments match like any other, and matching is case-sensitive. `?` and `[...]` are not supported. `check` fails a decision whose `governs` is a flow list (`[a, b]`) or a scalar, has no items, an empty or non-string item, an item with leading or trailing whitespace, an item with `?`, `[` or `]`, or a bare `*` or `**`; it does not check that a glob matches any file.
 
 ## Checks
 

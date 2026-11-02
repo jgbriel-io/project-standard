@@ -320,7 +320,7 @@ for (const [glob, path, expected] of [
     "0001-valid.md": governs('governs:\n  - "src/**"\n  - "src/{a,b}/*.ts"\n  - docs/*.md\n'),
     "0002-flow.md": governs('governs: ["src/{a,b}/**"]\n'),
     "0003-scalar.md": governs('governs: "src/**"\n'),
-    "0004-items.md": governs('governs:\n  - "src/?.ts"\n  - "**"\n  - "*"\n  - "src/[ab].ts"\n  - "src/a]"\n  - "src/ok/**"\n  - \n  - [a, b]\n  - ""\n'),
+    "0004-items.md": governs('governs:\n  - "src/?.ts"\n  - "**"\n  - "*"\n  - "src/[ab].ts"\n  - "src/a]"\n  - "src/ok/**"\n  - \n  - [a, b]\n  - ""\n  - " src/** "\n'),
     "0005-empty.md": governs("governs:\n"),
     "0006-absent.md": governs(""),
     "0007-trailing-space.md": governs('governs: \n  - "src/**"\n'),
@@ -343,6 +343,7 @@ for (const [glob, path, expected] of [
     "governs item 7: must be a non-empty string",
     "governs item 8: must be a non-empty string",
     "governs item 9: must be a non-empty string",
+    "governs item 10: has leading or trailing whitespace",
   ].map((m) => `docs/decisions/0004-items.md:7: [frontmatter] ${m}`));
   assert.deepEqual(of("0005-empty.md"), ["docs/decisions/0005-empty.md:7: [frontmatter] governs has no items"]);
   assert.deepEqual(of("0006-absent.md"), []);
