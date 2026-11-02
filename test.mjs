@@ -314,6 +314,43 @@ for (const [glob, path, expected] of [
   assert.deepEqual(which(["src/a.ts"], governingDecisions(listFiles(malformed), reader(malformed, false)))[0].decisions.map((d) => d.number), ["0001"]);
 }
 
+{
+  const governs = (extra) => decision(1, "accepted", extra);
+  const cases = {
+    "0001-valid.md": governs('governs:\n  - "src/**"\n  - "src/{a,b}/*.ts"\n  - docs/*.md\n'),
+    "0002-flow.md": governs('governs: ["src/{a,b}/**"]\n'),
+    "0003-scalar.md": governs('governs: "src/**"\n'),
+    "0004-items.md": governs('governs:\n  - "src/?.ts"\n  - "**"\n  - "*"\n  - "src/[ab].ts"\n  - "src/a]"\n  - "src/ok/**"\n  - \n  - [a, b]\n  - ""\n  - " src/** "\n'),
+    "0005-empty.md": governs("governs:\n"),
+    "0006-absent.md": governs(""),
+    "0007-trailing-space.md": governs('governs: \n  - "src/**"\n'),
+  };
+  const files = Object.fromEntries(Object.entries(cases).map(([name, src], i) => [`docs/decisions/${name}`, src.replace("number: 1", `number: ${i + 1}`)]));
+  const root = repo({});
+  stage(root, { ...files, "docs/product/scope.md": doc("product", "current", 'governs: ["src/{a,b}/**", "?"]\n'), "docs/product/other.md": doc("spec", "draft", "governs:\n  - \n") });
+  const found = messages(run(root, "staged").filter((f) => f.check === "frontmatter"));
+  const of = (name) => found.filter((m) => m.startsWith(`docs/decisions/${name}:`));
+  const flow = "[frontmatter] governs must be a block list, one \"- glob\" item per line, not a flow list or a scalar";
+  assert.deepEqual(of("0001-valid.md"), []);
+  assert.deepEqual(of("0002-flow.md"), [`docs/decisions/0002-flow.md:7: ${flow}`]);
+  assert.deepEqual(of("0003-scalar.md"), [`docs/decisions/0003-scalar.md:7: ${flow}`]);
+  assert.deepEqual(of("0004-items.md"), [
+    "governs item 1: ? [ and ] are not supported",
+    "governs item 2: a bare * or ** governs everything",
+    "governs item 3: a bare * or ** governs everything",
+    "governs item 4: ? [ and ] are not supported",
+    "governs item 5: ? [ and ] are not supported",
+    "governs item 7: must be a non-empty string",
+    "governs item 8: must be a non-empty string",
+    "governs item 9: must be a non-empty string",
+    "governs item 10: has leading or trailing whitespace",
+  ].map((m) => `docs/decisions/0004-items.md:7: [frontmatter] ${m}`));
+  assert.deepEqual(of("0005-empty.md"), ["docs/decisions/0005-empty.md:7: [frontmatter] governs has no items"]);
+  assert.deepEqual(of("0006-absent.md"), []);
+  assert.deepEqual(of("0007-trailing-space.md"), []);
+  assert.deepEqual(found.filter((m) => m.startsWith("docs/product/")), []);
+}
+
 // Gitleaks: a staged token fails the commit, a clean change passes. Downloads the pinned binary once.
 {
   const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
