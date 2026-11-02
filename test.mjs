@@ -435,6 +435,9 @@ for (const [glob, path, expected] of [
   assert.equal(dead.stdout, ['docs/decisions/0001-live.md:7: [governs] glob "gone/**" matches no tracked file', 'docs/decisions/0005-lib.md:7: [governs] glob "lib/*.ts" matches no tracked file', ""].join("\n"));
   commit(root, { "lib/x.ts": "" });
   assert.equal(cli(root, "check", "--governs").stdout, 'docs/decisions/0001-live.md:7: [governs] glob "gone/**" matches no tracked file\n');
+  stage(root, { "gone/x.ts": "" });
+  assert.equal(cli(root, "check", "--governs").stdout, 'docs/decisions/0001-live.md:7: [governs] glob "gone/**" matches no tracked file\n');
+  git(root, "rm", "-q", "--cached", "gone/x.ts");
 
   for (const other of [["--staged"], ["--all"], ["--base", "HEAD"], ["--staged", "--all"]]) assert.equal(cli(root, "check", "--governs", ...other).status, 2, other.join(" "));
   assert.equal(cli(root, "--governs").status, 2);
@@ -449,6 +452,10 @@ for (const [glob, path, expected] of [
 
   commit(root, { "src/a.ts": null });
   assert.equal(cli(root, "check", "--base", "HEAD^").stdout, `${heading}\n0001 Decision 1 (docs/decisions/0001-live.md)\n`);
+
+  git(root, "mv", "lib/x.ts", "moved.ts");
+  git(root, "commit", "-q", "-m", "rename");
+  assert.equal(cli(root, "check", "--base", "HEAD^").stdout, `${heading}\n0005 Decision 5 (docs/decisions/0005-lib.md)\n`);
 
   commit(root, { "docs/product/x.md": "# no frontmatter\n", "lib/y.ts": "" });
   const failing = cli(root, "check", "--base", "HEAD^");

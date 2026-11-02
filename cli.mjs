@@ -4,7 +4,7 @@ import { parseArgs } from "node:util";
 import { checkAgentsCap, checkDrift, sync } from "./lib/agents.mjs";
 import { checkDecisions, checkFrontmatter, checkLinks } from "./lib/docs.mjs";
 import { checkGitleaks } from "./lib/gitleaks.mjs";
-import { changes, listFiles, reader, repoRoot, resolveBase } from "./lib/git.mjs";
+import { changes, git, listFiles, reader, repoRoot, resolveBase } from "./lib/git.mjs";
 import { deadGlobs, governingChange, governingDecisions, which } from "./lib/governs.mjs";
 import { hook } from "./lib/hook.mjs";
 
@@ -57,7 +57,18 @@ if (positionals[0] !== "check" || modes !== 1) {
 const tracked = listFiles(root);
 
 if (values.governs) {
-  for (const { path, line, glob } of deadGlobs(governingDecisions(tracked, reader(root, false)), tracked)) console.log(`${path}:${line}: [governs] glob "${glob}" matches no tracked file`);
+  let committed = [];
+  try {
+    committed = git(root, ["ls-tree", "-r", "--name-only", "-z", "HEAD"]).split("\0").filter(Boolean);
+  } catch {}
+  const atHead = (path) => {
+    try {
+      return git(root, ["show", `HEAD:${path}`], { buffer: true });
+    } catch {
+      return null;
+    }
+  };
+  for (const { path, line, glob } of deadGlobs(governingDecisions(committed, atHead), committed)) console.log(`${path}:${line}: [governs] glob "${glob}" matches no tracked file`);
   process.exit(0);
 }
 
