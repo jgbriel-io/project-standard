@@ -500,6 +500,8 @@ for (const [glob, path, expected] of [
     "cap/seed.ts": "",
     "README.md": "# demo\n",
   });
+  sync(root);
+  commit(root, {});
 
   const dead = cli(root, "check", "--governs");
   assert.equal(dead.status, 0, dead.stderr);
