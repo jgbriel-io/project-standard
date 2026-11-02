@@ -36,13 +36,13 @@ governs:
   - "src/{api,web}/*.ts"
 ```
 
-`*` matches within one path segment and `**` across segments; a trailing `**` needs at least one segment below it, so `src/api/**` does not match `src/api` itself. Braces expand, dot segments match like any other, and matching is case-sensitive. `?` and `[...]` are not supported.
+`*` matches within one path segment and `**` across segments; a trailing `**` needs at least one segment below it, so `src/api/**` does not match `src/api` itself. Braces expand, dot segments match like any other, and matching is case-sensitive. `?` and `[...]` are not supported. `check` fails a decision whose `governs` is a flow list (`[a, b]`) or a scalar, has an empty or non-string item, an item with `?`, `[` or `]`, or a bare `*` or `**`; it does not check that a glob matches any file.
 
 ## Checks
 
 | Check | Runs on a partial scope when | Fails when |
 |---|---|---|
-| `frontmatter` | a `docs/**/*.md` outside `docs/archive/` changed | `type` or `status` is missing or not an allowed value. A decision also fails on a `number` that does not match its file name, a date not in `YYYY-MM-DD`, or a mismatch between `superseded_by` and `superseded` |
+| `frontmatter` | a `docs/**/*.md` outside `docs/archive/` changed | `type` or `status` is missing or not an allowed value. A decision also fails on a `number` that does not match its file name, a date not in `YYYY-MM-DD`, a mismatch between `superseded_by` and `superseded`, or a `governs` that is not a block list of non-empty globs (see Governs) |
 | `links` | a `.md` in `docs/`, the root `README.md` or `AGENTS.md` changed | a relative link does not resolve to a **tracked** file with the exact case, leaves the repo, or is a `[[wikilink]]`. When a change deletes or renames a file, only links pointing at the removed path are reported |
 | `decisions` | anything under `docs/decisions/` changed | numbers do not run contiguously from `0001`, or a file name is not `NNNN-slug.md`. It also fails unless `docs/decisions/README.md` has exactly one row per file, with the file's number, link and status |
 | `agents` | always | `AGENTS.md`, plus its `@imports` that resolve to tracked files (up to 5 hops), plus `.claude/rules/` files without `paths:`, reaches 200 lines |
