@@ -44,7 +44,7 @@ governs:
 `project-standard hook` tells Claude Code which decisions govern the file it is about to write. Wire it in `.claude/settings.json`:
 
 ```json
-{ "hooks": { "PreToolUse": [{ "matcher": "Edit|Write", "hooks": [{ "type": "command", "command": "bunx --bun project-standard hook" }] }] } }
+{ "hooks": { "PreToolUse": [{ "matcher": "Edit|Write", "hooks": [{ "type": "command", "command": "bunx --bun project-standard hook", "timeout": 10 }] }] } }
 ```
 
 It prints `{"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":"…"}}`, never a `permissionDecision`, so the edit always goes ahead and the agent reads the context next to the tool result. The repository is the one that holds the edited path (`git rev-parse --show-toplevel` from its nearest existing directory), not `CLAUDE_PROJECT_DIR`, so a path inside a worktree reads that worktree's decisions. At most 5 decisions per path, in ascending number, and under 1,500 characters in total. Only the Claude Code payload is read for now.

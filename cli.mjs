@@ -15,6 +15,7 @@ const USAGE = `usage:
   project-standard hook                                   read a Claude Code PreToolUse payload on stdin, print the decisions that govern the file`;
 
 if (process.argv[2] === "hook") {
+  process.stdout.on("error", () => process.exit(0));
   const out = await hook(process.stdin);
   await new Promise((done) => process.stdout.write(out, done));
   process.exit(0);

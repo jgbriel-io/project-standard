@@ -316,7 +316,7 @@ for (const [glob, path, expected] of [
 
 // hook: a Claude Code PreToolUse payload on stdin; the repository nearest the edited path decides, it never blocks and never prints on a miss.
 {
-  const tail = "Read docs/decisions/<file> for each before continuing; if this change contradicts one, amend or supersede it in this PR.";
+  const tail = "Read each listed file before continuing; if this change contradicts one, amend or supersede it in this PR.";
   const hook = (cwd, input, env = {}) => {
     const run = spawnSync(process.execPath, [join(here, "cli.mjs"), "hook"], { cwd, input: typeof input === "string" ? input : JSON.stringify(input), encoding: "utf8", env: { ...process.env, ...env } });
     assert.equal(run.status, 0, run.stderr);
@@ -337,17 +337,17 @@ for (const [glob, path, expected] of [
     "docs/decisions/0004-four.md": governed(4, "proposed", ["src/**"]),
     ...Object.fromEntries(Array.from({ length: 7 }, (_, i) => [cap(11 + i), governed(11 + i, "accepted", ["cap/**"], "T".repeat(500))])),
   });
-  const both = context(`Decisions governing src/a.ts: 0001 Decision 1; 0002 Decision 2. ${tail}`);
+  const both = context(`Decisions governing src/a.ts: 0001 Decision 1 (docs/decisions/0001-one.md); 0002 Decision 2 (docs/decisions/0002-two.md). ${tail}`);
   assert.equal(hook(root, edit(posix(join(root, "src/a.ts")), root)), both);
   assert.equal(hook(root, edit(windows(join(root, "src/a.ts")), root)), both);
-  assert.equal(hook(root, edit(windows(join(root, "src/new/deep/b.ts")), root)), context(`Decisions governing src/new/deep/b.ts: 0001 Decision 1. ${tail}`));
+  assert.equal(hook(root, edit(windows(join(root, "src/new/deep/b.ts")), root)), context(`Decisions governing src/new/deep/b.ts: 0001 Decision 1 (docs/decisions/0001-one.md). ${tail}`));
   assert.equal(hook(root, edit("src/a.ts", root)), both);
   assert.equal(hook(root, edit(posix(join(root, "src/..", "src/a.ts")), root)), both);
 
   const capped = JSON.parse(hook(root, edit(posix(join(root, "cap/x.ts")), root))).hookSpecificOutput.additionalContext;
   assert.ok(capped.length < 1500, String(capped.length));
   assert.equal(capped.match(/\d{4} T/g).length, 5);
-  assert.match(capped, /0011 T+…; 0012 T+…; 0013 T+…; 0014 T+…; 0015 T+…\. Read docs/);
+  assert.match(capped, /0011 T+… \(docs\/decisions\/0011-cap\.md\); 0012 T+… .+; 0015 T+… \(docs\/decisions\/0015-cap\.md\)\. Read each listed file/);
   assert.equal(hook(root, edit(posix(join(root, "src", "a/".repeat(700), "x.ts")), root)), "");
 
   assert.equal(hook(root, edit(posix(join(root, "README.md")), root)), "");
@@ -366,8 +366,8 @@ for (const [glob, path, expected] of [
   git(root, "worktree", "add", "-q", "-b", "wt", join(root, "wt"));
   write(join(root, "wt"), { "docs/decisions/0001-one.md": governed(1, "accepted", ["lib/**"]) });
   const env = { CLAUDE_PROJECT_DIR: root };
-  assert.equal(hook(root, edit(posix(join(root, "wt/lib/x.ts")), root), env), context(`Decisions governing lib/x.ts: 0001 Decision 1. ${tail}`));
-  assert.equal(hook(root, edit(windows(join(root, "wt/src/a.ts")), root), env), context(`Decisions governing src/a.ts: 0002 Decision 2. ${tail}`));
+  assert.equal(hook(root, edit(posix(join(root, "wt/lib/x.ts")), root), env), context(`Decisions governing lib/x.ts: 0001 Decision 1 (docs/decisions/0001-one.md). ${tail}`));
+  assert.equal(hook(root, edit(windows(join(root, "wt/src/a.ts")), root), env), context(`Decisions governing src/a.ts: 0002 Decision 2 (docs/decisions/0002-two.md). ${tail}`));
   assert.equal(hook(root, edit(posix(join(root, "wt/README.md")), root), env), "");
 }
 
