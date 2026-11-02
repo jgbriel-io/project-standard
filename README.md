@@ -23,6 +23,7 @@ Tags are `vX.Y.Z`. Up to `standard-v0.1.0` the package lived in `jgbriel-io/jgbr
 | `project-standard check --base <ref>` | CI. Checks what changed between `<ref>` and `HEAD`. An all-zeros or unknown ref falls back to `HEAD^` |
 | `project-standard check --all` | Migration. Checks every tracked file and scans the full history for secrets |
 | `project-standard which <path...>` | Prints, for each path, the accepted decisions whose `governs` globs match it, as `path: NNNN Title`, or `path: none`. Always exits 0 |
+| `project-standard hook` | Claude Code `PreToolUse` hook. Reads the payload on stdin and prints the decisions that govern `tool_input.file_path` as agent context. Never blocks, always exits 0, prints nothing on a miss or an error |
 
 Findings print as `path:line: [check] message`. There are no warnings: any finding exits 1.
 
@@ -37,6 +38,16 @@ governs:
 ```
 
 `*` matches within one path segment and `**` across segments; a trailing `**` needs at least one segment below it, so `src/api/**` does not match `src/api` itself. Braces expand, dot segments match like any other, and matching is case-sensitive. `?` and `[...]` are not supported. `check` fails a decision whose `governs` is a flow list (`[a, b]`) or a scalar, has no items, an empty or non-string item, an item with leading or trailing whitespace, an item with `?`, `[` or `]`, or a bare `*` or `**`; it does not check that a glob matches any file.
+
+### Hook
+
+`project-standard hook` tells Claude Code which decisions govern the file it is about to write. Wire it in `.claude/settings.json`:
+
+```json
+{ "hooks": { "PreToolUse": [{ "matcher": "Edit|Write", "hooks": [{ "type": "command", "command": "bunx --bun project-standard hook", "timeout": 10 }] }] } }
+```
+
+It prints `{"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":"…"}}`, never a `permissionDecision`, so the edit always goes ahead and the agent reads the context next to the tool result. The repository is the one that holds the edited path (`git rev-parse --show-toplevel` from its nearest existing directory), not `CLAUDE_PROJECT_DIR`, so a path inside a worktree reads that worktree's decisions. At most 5 decisions per path, in ascending number, and under 1,500 characters in total. Only the Claude Code payload is read for now.
 
 ## Checks
 
