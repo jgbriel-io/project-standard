@@ -22,8 +22,21 @@ Tags are `vX.Y.Z`. Up to `standard-v0.1.0` the package lived in `jgbriel-io/jgbr
 | `project-standard check --staged` | Pre-commit. Reads the staged content from the index, not the working tree |
 | `project-standard check --base <ref>` | CI. Checks what changed between `<ref>` and `HEAD`. An all-zeros or unknown ref falls back to `HEAD^` |
 | `project-standard check --all` | Migration. Checks every tracked file and scans the full history for secrets |
+| `project-standard which <path...>` | Prints, for each path, the accepted decisions whose `governs` globs match it, as `path: NNNN Title`, or `path: none`. Always exits 0 |
 
 Findings print as `path:line: [check] message`. There are no warnings: any finding exits 1.
+
+### Governs
+
+A decision may name the code it governs in an optional `governs:` block list of repo-relative globs. A repository whose decisions carry none sees no change.
+
+```yaml
+governs:
+  - "src/api/**"
+  - "src/{api,web}/*.ts"
+```
+
+`*` matches within one path segment and `**` across segments; a trailing `**` needs at least one segment below it, so `src/api/**` does not match `src/api` itself. Braces expand, dot segments match like any other, and matching is case-sensitive. `?` and `[...]` are not supported.
 
 ## Checks
 
