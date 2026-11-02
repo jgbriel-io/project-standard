@@ -6,11 +6,19 @@ import { checkDecisions, checkFrontmatter, checkLinks } from "./lib/docs.mjs";
 import { checkGitleaks } from "./lib/gitleaks.mjs";
 import { changes, listFiles, reader, repoRoot, resolveBase } from "./lib/git.mjs";
 import { governingDecisions, which } from "./lib/governs.mjs";
+import { hook } from "./lib/hook.mjs";
 
 const USAGE = `usage:
   project-standard sync                                   regenerate the Cursor, Codex and Kiro copies
   project-standard check (--staged | --base <ref> | --all)
-  project-standard which <path...>                        list the accepted decisions that govern each path`;
+  project-standard which <path...>                        list the accepted decisions that govern each path
+  project-standard hook                                   read a Claude Code PreToolUse payload on stdin, print the decisions that govern the file`;
+
+if (process.argv[2] === "hook") {
+  const out = await hook(process.stdin);
+  await new Promise((done) => process.stdout.write(out, done));
+  process.exit(0);
+}
 
 const { values, positionals } = parseArgs({
   allowPositionals: true,

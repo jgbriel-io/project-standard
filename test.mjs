@@ -65,6 +65,7 @@ function run(root, kind, base) {
 const messages = (findings) => findings.map((f) => `${f.path}:${f.line}: [${f.check}] ${f.message}`);
 const doc = (type, status, extra = "") => `---\ntype: ${type}\nstatus: ${status}\n${extra}---\n# Title\n`;
 const decision = (n, status = "accepted", extra = "") => `---\ntype: decision\nstatus: ${status}\nnumber: ${n}\ndate: 2026-09-28\nsuperseded_by:\n${extra}---\n# ${n}\n`;
+const governed = (n, status, globs, title = `Decision ${n}`) => decision(n, status, `governs:\n${globs.map((g) => `  - "${g}"\n`).join("")}`).replace(`# ${n}\n`, `# ${String(n).padStart(4, "0")} ${title}\n`);
 
 // Frontmatter parser: empty value is null, block and inline lists, anything else is reported.
 {
@@ -291,7 +292,6 @@ for (const [glob, path, expected] of [
 
 // which: only accepted decisions with governs, ascending, title without its number; the CLI prints them.
 {
-  const governed = (n, status, globs) => decision(n, status, `governs:\n${globs.map((g) => `  - "${g}"\n`).join("")}`).replace(`# ${n}\n`, `# ${String(n).padStart(4, "0")} Decision ${n}\n`);
   const root = repo({
     "docs/decisions/0001-one.md": governed(1, "accepted", ["src/**"]),
     "docs/decisions/0002-two.md": governed(2, "superseded", ["src/**"]),
@@ -312,6 +312,63 @@ for (const [glob, path, expected] of [
 
   const malformed = repo({ "docs/decisions/0001-one.md": decision(1, "accepted", 'governs:\n  - \n  - [a, b]\n  - "src/**"\n'), "src/a.ts": "" });
   assert.deepEqual(which(["src/a.ts"], governingDecisions(listFiles(malformed), reader(malformed, false)))[0].decisions.map((d) => d.number), ["0001"]);
+}
+
+// hook: a Claude Code PreToolUse payload on stdin; the repository nearest the edited path decides, it never blocks and never prints on a miss.
+{
+  const tail = "Read docs/decisions/<file> for each before continuing; if this change contradicts one, amend or supersede it in this PR.";
+  const hook = (cwd, input, env = {}) => {
+    const run = spawnSync(process.execPath, [join(here, "cli.mjs"), "hook"], { cwd, input: typeof input === "string" ? input : JSON.stringify(input), encoding: "utf8", env: { ...process.env, ...env } });
+    assert.equal(run.status, 0, run.stderr);
+    assert.equal(run.stderr, "");
+    assert.doesNotMatch(run.stdout, /permissionDecision/);
+    return run.stdout;
+  };
+  const edit = (file_path, cwd) => ({ session_id: "s", cwd, hook_event_name: "PreToolUse", tool_name: "Write", tool_input: { file_path, content: "x" } });
+  const context = (text) => JSON.stringify({ hookSpecificOutput: { hookEventName: "PreToolUse", additionalContext: text } });
+  const posix = (p) => p.replaceAll("\\", "/");
+  const windows = (p) => p.replaceAll("/", "\\");
+  const cap = (n) => `docs/decisions/${String(n).padStart(4, "0")}-cap.md`;
+
+  const root = repo({
+    "docs/decisions/0001-one.md": governed(1, "accepted", ["src/**"]),
+    "docs/decisions/0002-two.md": governed(2, "accepted", ["src/{a,b}.ts"]),
+    "docs/decisions/0003-three.md": governed(3, "superseded", ["src/**"]),
+    "docs/decisions/0004-four.md": governed(4, "proposed", ["src/**"]),
+    ...Object.fromEntries(Array.from({ length: 7 }, (_, i) => [cap(11 + i), governed(11 + i, "accepted", ["cap/**"], "T".repeat(500))])),
+  });
+  const both = context(`Decisions governing src/a.ts: 0001 Decision 1; 0002 Decision 2. ${tail}`);
+  assert.equal(hook(root, edit(posix(join(root, "src/a.ts")), root)), both);
+  assert.equal(hook(root, edit(windows(join(root, "src/a.ts")), root)), both);
+  assert.equal(hook(root, edit(windows(join(root, "src/new/deep/b.ts")), root)), context(`Decisions governing src/new/deep/b.ts: 0001 Decision 1. ${tail}`));
+  assert.equal(hook(root, edit("src/a.ts", root)), both);
+  assert.equal(hook(root, edit(posix(join(root, "src/..", "src/a.ts")), root)), both);
+
+  const capped = JSON.parse(hook(root, edit(posix(join(root, "cap/x.ts")), root))).hookSpecificOutput.additionalContext;
+  assert.ok(capped.length < 1500, String(capped.length));
+  assert.equal(capped.match(/\d{4} T/g).length, 5);
+  assert.match(capped, /0011 T+…; 0012 T+…; 0013 T+…; 0014 T+…; 0015 T+…\. Read docs/);
+  assert.equal(hook(root, edit(posix(join(root, "src", "a/".repeat(700), "x.ts")), root)), "");
+
+  assert.equal(hook(root, edit(posix(join(root, "README.md")), root)), "");
+  assert.equal(hook(root, edit(posix(join(root, "docs/decisions/0001-one.md")), root)), "");
+  assert.equal(hook(root, "{ nope"), "");
+  assert.equal(hook(root, ""), "");
+  assert.equal(hook(root, { tool_name: "Write", tool_input: {} }), "");
+  assert.equal(hook(root, { tool_input: { file_path: 7 } }), "");
+  assert.equal(hook(root, "null"), "");
+
+  const outside = mkdtempSync(join(tmpdir(), "project-standard-"));
+  roots.push(outside);
+  assert.equal(hook(outside, edit(join(outside, "src/a.ts"), outside)), "");
+  assert.equal(hook(outside, edit(posix(join(root, "src/a.ts")), outside)), both);
+
+  git(root, "worktree", "add", "-q", "-b", "wt", join(root, "wt"));
+  write(join(root, "wt"), { "docs/decisions/0001-one.md": governed(1, "accepted", ["lib/**"]) });
+  const env = { CLAUDE_PROJECT_DIR: root };
+  assert.equal(hook(root, edit(posix(join(root, "wt/lib/x.ts")), root), env), context(`Decisions governing lib/x.ts: 0001 Decision 1. ${tail}`));
+  assert.equal(hook(root, edit(windows(join(root, "wt/src/a.ts")), root), env), context(`Decisions governing src/a.ts: 0002 Decision 2. ${tail}`));
+  assert.equal(hook(root, edit(posix(join(root, "wt/README.md")), root), env), "");
 }
 
 // Gitleaks: a staged token fails the commit, a clean change passes. Downloads the pinned binary once.
